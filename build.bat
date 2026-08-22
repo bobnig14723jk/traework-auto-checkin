@@ -8,7 +8,13 @@ echo.
 pip install pyinstaller -q
 
 echo 正在打包签到程序...
-pyinstaller --onefile --windowed --icon=orange.ico --name=OrangeCheckin checkin.py -y
+if exist orange.ico (
+    echo   使用橙子图标 🍊
+    pyinstaller --onefile --windowed --icon=orange.ico --name=OrangeCheckin checkin.py -y
+) else (
+    echo   未找到orange.ico，使用默认图标
+    pyinstaller --onefile --windowed --name=OrangeCheckin checkin.py -y
+)
 
 echo.
 echo 正在打包坐标校准工具...
