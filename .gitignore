@@ -1,7 +1,0 @@
-__pycache__/
-*.pyc
-build/
-dist/
-*.spec
-checkin_config.json
-traework-checkin.log
