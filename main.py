@@ -58,8 +58,24 @@ DEFAULT_CONFIG = {
     "checkin_rel_y": -1,
     "trae_path": "",
     "calibrated": False,
-    "auto_time": "09:00"
+    "auto_time": "09:00",
+    "calib_win_w": 0,
+    "calib_win_h": 0
 }
+
+def enable_dpi_awareness():
+    """声明 DPI 感知，确保窗口坐标按物理像素计算，避免显示缩放导致点击偏移"""
+    try:
+        # Windows 8.1+: 系统级 DPI 感知
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        return
+    except:
+        pass
+    try:
+        # 旧版 Windows 回退
+        ctypes.windll.user32.SetProcessDPIAware()
+    except:
+        pass
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -416,6 +432,19 @@ class App:
             ww = rect.right - rect.left
             wh = rect.bottom - rect.top
             
+            # 比对当前窗口尺寸与校准时是否一致，不一致说明界面/分辨率变了，坐标可能失效
+            calib_w = int(self.config.get("calib_win_w", 0) or 0)
+            calib_h = int(self.config.get("calib_win_h", 0) or 0)
+            if calib_w > 0 and calib_h > 0:
+                if abs(ww - calib_w) > 30 or abs(wh - calib_h) > 30:
+                    msg = ("窗口尺寸与校准时不一致（当前 %dx%d，校准 %dx%d），\n"
+                           "界面布局或分辨率可能已变化，签到位置会不准，请重新校准！" % (ww, wh, calib_w, calib_h))
+                    self._log(msg)
+                    user32.SetCursorPos(orig_x, orig_y)
+                    if not silent:
+                        self.root.after(0, lambda: messagebox.showwarning("需要重新校准", msg))
+                    return
+            
             click_at(rect.left + ww//2, rect.top + wh//2)
             time.sleep(0.1)
             
@@ -653,6 +682,9 @@ class App:
             self.config["checkin_rel_y"] = cky
             self.config["trae_path"] = tp
             self.config["calibrated"] = True
+            # 记录校准时窗口尺寸，用于之后比对窗口是否变化
+            self.config["calib_win_w"] = ww
+            self.config["calib_win_h"] = wh
             save_config(self.config)
             self.trae_path = tp
             
@@ -758,6 +790,7 @@ class App:
             self._update_task_status()
 
 def main():
+    enable_dpi_awareness()  # 必须在创建窗口之前声明，否则不生效
     try:
         auto_mode = "--auto" in sys.argv
         root = tk.Tk()
