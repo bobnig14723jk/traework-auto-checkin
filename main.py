@@ -432,18 +432,29 @@ class App:
             ww = rect.right - rect.left
             wh = rect.bottom - rect.top
             
-            # 比对当前窗口尺寸与校准时是否一致，不一致说明界面/分辨率变了，坐标可能失效
+            # 自适应：窗口尺寸变化时，等比例缩放坐标（分辨率/缩放变化自动适配，无需重校）
             calib_w = int(self.config.get("calib_win_w", 0) or 0)
             calib_h = int(self.config.get("calib_win_h", 0) or 0)
             if calib_w > 0 and calib_h > 0:
                 if abs(ww - calib_w) > 30 or abs(wh - calib_h) > 30:
-                    msg = ("窗口尺寸与校准时不一致（当前 %dx%d，校准 %dx%d），\n"
-                           "界面布局或分辨率可能已变化，签到位置会不准，请重新校准！" % (ww, wh, calib_w, calib_h))
-                    self._log(msg)
-                    user32.SetCursorPos(orig_x, orig_y)
-                    if not silent:
-                        self.root.after(0, lambda: messagebox.showwarning("需要重新校准", msg))
-                    return
+                    ratio_w = ww / float(calib_w)
+                    ratio_h = wh / float(calib_h)
+                    # 宽高变化比例接近（等比例缩放，如分辨率/DPI变化）→ 自动换算坐标
+                    if abs(ratio_w - ratio_h) / max(ratio_w, ratio_h) < 0.03:
+                        ax = int(ax * ratio_w)
+                        ay = int(ay * ratio_h)
+                        cx = int(cx * ratio_w)
+                        cy = int(cy * ratio_h)
+                        self._log("窗口尺寸变化 (%dx%d -> %dx%d)，已按比例自动调整坐标" % (calib_w, calib_h, ww, wh))
+                    else:
+                        # 非等比例变化（如界面改版）→ 才需要重新校准
+                        msg = ("窗口尺寸与校准时不一致且非等比例变化（当前 %dx%d，校准 %dx%d），\n"
+                               "界面布局可能已改动，签到位置会不准，请重新校准！" % (ww, wh, calib_w, calib_h))
+                        self._log(msg)
+                        user32.SetCursorPos(orig_x, orig_y)
+                        if not silent:
+                            self.root.after(0, lambda: messagebox.showwarning("需要重新校准", msg))
+                        return
             
             click_at(rect.left + ww//2, rect.top + wh//2)
             time.sleep(0.1)
