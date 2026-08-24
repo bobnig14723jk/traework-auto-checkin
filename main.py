@@ -493,11 +493,10 @@ class App:
         ok = messagebox.askokcancel("开始校准",
             "校准流程说明：\n\n"
             "1. 程序会自动打开TraeWork并最大化\n"
-            "2. 右下角会出现一个小提示窗口\n"
-            "3. 你只需要【移动鼠标】到指定位置\n"
-            "   （不需要点击TraeWork窗口）\n"
-            "4. 鼠标放好位置后，点击提示窗口上的\n"
-            "   【确认位置】按钮\n\n"
+            "2. 右下角会出现倒计时提示窗口\n"
+            "3. 请在【3秒倒计时结束前】把鼠标移到\n"
+            "   指定位置（不需要点击TraeWork窗口）\n"
+            "4. 倒计时结束会自动记录鼠标位置\n\n"
             "准备好了吗？")
         if not ok:
             return
@@ -544,7 +543,7 @@ class App:
             time.sleep(0.2)
             
             # ========== 第一步 ==========
-            self._log("第1步：请将鼠标移到左下角头像上，然后点确认...")
+            self._log("第1步：请在倒计时结束前将鼠标移到左下角头像上...")
             s1 = threading.Event()
             r1 = {"cancel": True, "x": 0, "y": 0}
             
@@ -555,7 +554,7 @@ class App:
                 win.resizable(False, False)
                 
                 win_w = 320
-                win_h = 140
+                win_h = 170
                 sx = win.winfo_screenwidth()
                 sy = win.winfo_screenheight()
                 x_pos = sx - win_w - 20
@@ -567,20 +566,14 @@ class App:
                 
                 tk.Label(f, text="第 1 步 / 共 2 步", font=("微软雅黑", 12, "bold"), 
                         fg="#d35400", bg="#fff3cd").pack(pady=(0,5))
-                tk.Label(f, text="请把鼠标移动到 TraeWork 左下角的头像上\n（不需要点击，只需要移动鼠标过去）", 
-                        font=("微软雅黑",9), justify=tk.CENTER, bg="#fff3cd").pack(pady=(0,10))
+                count_label = tk.Label(f, text="3", font=("微软雅黑", 36, "bold"), 
+                        fg="#d35400", bg="#fff3cd")
+                count_label.pack()
+                tk.Label(f, text="倒计时结束后自动记录鼠标位置\n请把鼠标移到 TraeWork 左下角的头像上", 
+                        font=("微软雅黑",9), justify=tk.CENTER, bg="#fff3cd").pack(pady=(0,8))
                 
                 bf = tk.Frame(f, bg="#fff3cd")
                 bf.pack(fill=tk.X)
-                
-                def ok1():
-                    r1["x"], r1["y"] = get_cursor_pos()
-                    r1["cancel"] = False
-                    try:
-                        win.destroy()
-                    except:
-                        pass
-                    s1.set()
                 
                 def cancel1():
                     r1["cancel"] = True
@@ -590,15 +583,25 @@ class App:
                         pass
                     s1.set()
                 
-                ok_btn = tk.Button(bf, text="✓ 确认位置", font=("微软雅黑",11,"bold"), 
-                                  bg="#27ae60", fg="white", command=ok1, width=14, pady=3)
-                ok_btn.pack(side=tk.LEFT, padx=5)
-                ok_btn.focus_set()
-                
                 tk.Button(bf, text="取消", font=("微软雅黑",10), command=cancel1, width=8, pady=3).pack(side=tk.RIGHT, padx=5)
                 
-                win.bind('<Return>', lambda e: ok1())
                 win.protocol("WM_DELETE_WINDOW", cancel1)
+                
+                def tick(n):
+                    if n <= 0:
+                        r1["x"], r1["y"] = get_cursor_pos()
+                        r1["cancel"] = False
+                        self._log("头像位置: (%d, %d)" % (r1["x"], r1["y"]))
+                        try:
+                            win.destroy()
+                        except:
+                            pass
+                        s1.set()
+                        return
+                    count_label.config(text=str(n))
+                    win.after(1000, lambda: tick(n-1))
+                
+                win.after(300, lambda: tick(3))
             
             self.root.after(300, show_step1)
             s1.wait()
@@ -618,7 +621,7 @@ class App:
             time.sleep(0.6)
             
             # ========== 第二步 ==========
-            self._log("第2步：请将鼠标移到「每日签到」按钮上，然后点确认...")
+            self._log("第2步：请在倒计时结束前将鼠标移到「每日签到」按钮上...")
             s2 = threading.Event()
             r2 = {"cancel": True, "x": 0, "y": 0}
             
@@ -629,7 +632,7 @@ class App:
                 win.resizable(False, False)
                 
                 win_w = 340
-                win_h = 140
+                win_h = 170
                 sx = win.winfo_screenwidth()
                 sy = win.winfo_screenheight()
                 x_pos = sx - win_w - 20
@@ -641,20 +644,14 @@ class App:
                 
                 tk.Label(f, text="第 2 步 / 共 2 步", font=("微软雅黑", 12, "bold"), 
                         fg="#0c5460", bg="#d1ecf1").pack(pady=(0,5))
-                tk.Label(f, text="请把鼠标移动到「每日签到领200积分」按钮上\n（不需要点击，只需要移动鼠标过去）", 
-                        font=("微软雅黑",9), justify=tk.CENTER, bg="#d1ecf1").pack(pady=(0,10))
+                count_label = tk.Label(f, text="3", font=("微软雅黑", 36, "bold"), 
+                        fg="#0c5460", bg="#d1ecf1")
+                count_label.pack()
+                tk.Label(f, text="倒计时结束后自动记录鼠标位置\n请把鼠标移到「每日签到领200积分」按钮上", 
+                        font=("微软雅黑",9), justify=tk.CENTER, bg="#d1ecf1").pack(pady=(0,8))
                 
                 bf = tk.Frame(f, bg="#d1ecf1")
                 bf.pack(fill=tk.X)
-                
-                def ok2():
-                    r2["x"], r2["y"] = get_cursor_pos()
-                    r2["cancel"] = False
-                    try:
-                        win.destroy()
-                    except:
-                        pass
-                    s2.set()
                 
                 def cancel2():
                     r2["cancel"] = True
@@ -664,15 +661,25 @@ class App:
                         pass
                     s2.set()
                 
-                ok_btn = tk.Button(bf, text="✓ 确认位置", font=("微软雅黑",11,"bold"), 
-                                  bg="#27ae60", fg="white", command=ok2, width=14, pady=3)
-                ok_btn.pack(side=tk.LEFT, padx=5)
-                ok_btn.focus_set()
-                
                 tk.Button(bf, text="取消", font=("微软雅黑",10), command=cancel2, width=8, pady=3).pack(side=tk.RIGHT, padx=5)
                 
-                win.bind('<Return>', lambda e: ok2())
                 win.protocol("WM_DELETE_WINDOW", cancel2)
+                
+                def tick(n):
+                    if n <= 0:
+                        r2["x"], r2["y"] = get_cursor_pos()
+                        r2["cancel"] = False
+                        self._log("签到按钮位置: (%d, %d)" % (r2["x"], r2["y"]))
+                        try:
+                            win.destroy()
+                        except:
+                            pass
+                        s2.set()
+                        return
+                    count_label.config(text=str(n))
+                    win.after(1000, lambda: tick(n-1))
+                
+                win.after(300, lambda: tick(3))
             
             self.root.after(300, show_step2)
             s2.wait()
