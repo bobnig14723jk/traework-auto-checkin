@@ -17,7 +17,24 @@ if getattr(sys, 'frozen', False):
 else:
     APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-CONFIG_FILE = os.path.join(APP_DIR, "checkin_config.json")
+DATA_DIR = os.path.join(os.environ.get('APPDATA', APP_DIR), '橙子签到')
+try:
+    os.makedirs(DATA_DIR, exist_ok=True)
+except:
+    DATA_DIR = APP_DIR
+
+CONFIG_FILE = os.path.join(DATA_DIR, "checkin_config.json")
+
+def _migrate_old_config():
+    old = os.path.join(APP_DIR, "checkin_config.json")
+    if not os.path.exists(CONFIG_FILE) and os.path.exists(old):
+        try:
+            import shutil
+            shutil.copy2(old, CONFIG_FILE)
+        except:
+            pass
+
+_migrate_old_config()
 TASK_NAME = "TraeWorkDailyCheckin"
 
 SW_MAXIMIZE = 3
@@ -160,6 +177,10 @@ def build_task_xml(exe_path, run_time="09:00"):
     <LogonTrigger>
       <Enabled>true</Enabled>
     </LogonTrigger>
+    <SessionStateChangeTrigger>
+      <StateChange>SessionUnlock</StateChange>
+      <Enabled>true</Enabled>
+    </SessionStateChangeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author"><RunLevel>HighestAvailable</RunLevel></Principal>
@@ -176,7 +197,7 @@ def build_task_xml(exe_path, run_time="09:00"):
     <Enabled>true</Enabled>
     <Hidden>false</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
-    <WakeToRun>false</WakeToRun>
+    <WakeToRun>true</WakeToRun>
     <ExecutionTimeLimit>PT5M</ExecutionTimeLimit>
     <Priority>7</Priority>
   </Settings>
@@ -346,7 +367,7 @@ class App:
                 self.log_list.delete(0, self.log_list.size()-200)
             # 同时写入日志文件，方便排查
             try:
-                log_path = os.path.join(APP_DIR, "checkin.log")
+                log_path = os.path.join(DATA_DIR, "checkin.log")
                 with open(log_path, "a", encoding="utf-8") as f:
                     f.write(line + "\n")
             except:
@@ -807,6 +828,13 @@ class App:
                 messagebox.showerror("失败", "取消失败")
             self._update_task_status()
 
+def is_session_active():
+    """检测当前会话是否激活（非锁屏/非休眠）"""
+    try:
+        return user32.GetForegroundWindow() != 0
+    except:
+        return True
+
 def main():
     enable_dpi_awareness()  # 必须在创建窗口之前声明，否则不生效
     try:
@@ -816,6 +844,10 @@ def main():
         if auto_mode:
             # 自动签到模式：任务计划触发时静默签到后自动退出
             def _auto_run():
+                if not is_session_active():
+                    app._log("会话未激活（锁屏/休眠），跳过本次签到，等待解锁后触发")
+                    root.after(500, root.destroy)
+                    return
                 app._log("自动签到任务触发")
                 app._do_checkin(silent=True)
                 root.after(4000, root.destroy)
@@ -825,7 +857,7 @@ def main():
         import traceback
         err = traceback.format_exc()
         try:
-            log_path = os.path.join(APP_DIR, "error_log.txt")
+            log_path = os.path.join(DATA_DIR, "error_log.txt")
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write(err)
         except:
