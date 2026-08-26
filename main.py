@@ -38,6 +38,8 @@ _migrate_old_config()
 TASK_NAME = "TraeWorkDailyCheckin"
 
 SW_MAXIMIZE = 3
+SW_RESTORE = 9
+SW_SHOW = 5
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 
@@ -129,14 +131,75 @@ def find_trae_path():
     return None
 
 def find_trae_window():
-    for title in ["TraeWork CN", "TRAE SOLO CN", "Trae CN", "TraeWork"]:
-        try:
-            hwnd = user32.FindWindowW(None, title)
-            if hwnd:
-                return hwnd, title
-        except:
-            pass
-    return None, None
+    """枚举所有窗口，找标题包含 TraeWork 且尺寸最大的主窗口，
+    避免匹配到隐藏的小辅助窗口。"""
+    import ctypes.wintypes as wintypes
+    
+    candidates = []  # [(hwnd, title, width, height)]
+    
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    def enum_callback(hwnd, _lparam):
+        title_len = user32.GetWindowTextLengthW(hwnd)
+        if title_len == 0:
+            return True
+        buf = ctypes.create_unicode_buffer(title_len + 1)
+        user32.GetWindowTextW(hwnd, buf, title_len + 1)
+        title = buf.value
+        # 匹配标题包含 TraeWork/TRAE 的窗口
+        if any(k in title for k in ["TraeWork", "TRAE SOLO", "Trae CN"]):
+            # 跳过不可见窗口
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            rect = RECT()
+            user32.GetWindowRect(hwnd, ctypes.byref(rect))
+            w = rect.right - rect.left
+            h = rect.bottom - rect.top
+            # 太小的窗口肯定不是主界面（辅助窗口、托盘提示等）
+            if w > 200 and h > 200:
+                candidates.append((hwnd, title, w, h))
+        return True
+    
+    user32.EnumWindows(enum_callback, 0)
+    
+    if not candidates:
+        return None, None
+    
+    # 按面积排序，取最大的作为主窗口
+    candidates.sort(key=lambda x: x[2] * x[3], reverse=True)
+    return candidates[0][0], candidates[0][1]
+
+def maximize_window_force(hwnd):
+    """可靠地最大化窗口：先还原再最大化，反复验证直到真正生效。
+    返回 (width, height) 即最大化后的窗口尺寸。"""
+    # 先还原（如果最小化了）
+    user32.ShowWindow(hwnd, SW_RESTORE)
+    time.sleep(0.3)
+    # 再最大化
+    user32.ShowWindow(hwnd, SW_MAXIMIZE)
+    time.sleep(0.3)
+    user32.SetForegroundWindow(hwnd)
+    time.sleep(0.2)
+    
+    # 验证：如果窗口还是很小（< 500 宽），重试几次
+    for attempt in range(5):
+        rect = RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        ww = rect.right - rect.left
+        wh = rect.bottom - rect.top
+        if ww > 500:  # 正常窗口肯定大于 500 像素
+            return ww, wh
+        # 再试一次
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        time.sleep(0.2)
+        user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        time.sleep(0.5)
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.2)
+    
+    # 最后返回实际尺寸（让上层判断）
+    rect = RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return rect.right - rect.left, rect.bottom - rect.top
 
 def get_cursor_pos():
     pt = POINT()
@@ -433,8 +496,12 @@ class App:
             if not hwnd:
                 self._log("正在启动TraeWork...")
                 subprocess.Popen(tp)
-                time.sleep(6)
-                hwnd, title = find_trae_window()
+                # 等待最多 15 秒，每 1 秒检查一次窗口
+                for i in range(15):
+                    time.sleep(1)
+                    hwnd, title = find_trae_window()
+                    if hwnd:
+                        break
             else:
                 self._log("TraeWork已运行: " + str(title))
                 time.sleep(0.15)
@@ -443,15 +510,16 @@ class App:
                 raise Exception("找不到TraeWork窗口，请手动打开后再试")
             
             self._log("最大化窗口...")
-            user32.ShowWindow(hwnd, SW_MAXIMIZE)
-            time.sleep(0.3)
-            user32.SetForegroundWindow(hwnd)
-            time.sleep(0.3)
+            ww, wh = maximize_window_force(hwnd)
             
             rect = RECT()
             user32.GetWindowRect(hwnd, ctypes.byref(rect))
             ww = rect.right - rect.left
             wh = rect.bottom - rect.top
+            
+            # 如果窗口还是很小，说明最大化失败（可能锁屏了或窗口无响应）
+            if ww < 500:
+                raise Exception("TraeWork窗口无法最大化（当前仅 %dx%d），请确认屏幕已解锁" % (ww, wh))
             
             # 自适应：窗口尺寸变化时，等比例缩放坐标（分辨率/缩放变化自动适配，无需重校）
             calib_w = int(self.config.get("calib_win_w", 0) or 0)
@@ -543,17 +611,18 @@ class App:
             if not hwnd:
                 self._log("正在启动TraeWork...")
                 subprocess.Popen(tp)
-                time.sleep(7)
-                hwnd, title = find_trae_window()
+                # 等待最多 15 秒
+                for i in range(15):
+                    time.sleep(1)
+                    hwnd, title = find_trae_window()
+                    if hwnd:
+                        break
             
             if not hwnd:
                 raise Exception("找不到TraeWork窗口，请手动打开后再试")
             
             self._log("找到窗口: " + str(title))
-            user32.ShowWindow(hwnd, SW_MAXIMIZE)
-            time.sleep(0.4)
-            user32.SetForegroundWindow(hwnd)
-            time.sleep(0.4)
+            maximize_window_force(hwnd)
             
             rect = RECT()
             user32.GetWindowRect(hwnd, ctypes.byref(rect))
