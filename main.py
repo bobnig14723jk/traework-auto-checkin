@@ -11,11 +11,27 @@ def _elevate():
         # 以管理员权限重启自己
         params = " ".join('"%s"' % a for a in sys.argv[1:])
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
-        sys.exit(0)
+        os._exit(0)
     except:
         pass
 
 _elevate()
+
+# 互斥量：防止同时运行多个实例
+_mutex = None
+def _check_single_instance():
+    global _mutex
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        _mutex = kernel32.CreateMutexW(None, True, "OrangeCheckin_SingleInstance_Mutex")
+        if kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+            # 已经有一个实例在运行了，直接退出
+            os._exit(0)
+    except:
+        pass
+
+_check_single_instance()
 
 # 在导入 tkinter 之前设置 TCL/TK 路径（PyInstaller 打包后需要）
 if getattr(sys, 'frozen', False):
@@ -184,6 +200,9 @@ def find_trae_window():
         buf = ctypes.create_unicode_buffer(title_len + 1)
         user32.GetWindowTextW(hwnd, buf, title_len + 1)
         title = buf.value
+        # 排除自己的窗口（标题里有"签到"）
+        if "签到" in title:
+            return True
         # 匹配标题包含 TraeWork/TRAE 的窗口
         if any(k in title for k in ["TraeWork", "TRAE SOLO", "Trae CN"]):
             # 跳过不可见窗口
