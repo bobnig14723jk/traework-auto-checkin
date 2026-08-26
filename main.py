@@ -1,6 +1,27 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
+
+# 在导入 tkinter 之前设置 TCL/TK 路径（PyInstaller 打包后需要）
+if getattr(sys, 'frozen', False):
+    try:
+        _base = sys._MEIPASS
+        # PyInstaller 的 pyi_rth__tkinter 会把 tcl 放到 _MEIPASS/tcl 下
+        # 但如果 hook 检测失败就不会放，这里做个兜底
+        _tcl_dir = os.path.join(_base, 'tcl')
+        if os.path.isdir(_tcl_dir):
+            # 找 tcl8.x 子目录
+            for _name in os.listdir(_tcl_dir):
+                if _name.startswith('tcl8') and os.path.isdir(os.path.join(_tcl_dir, _name)):
+                    os.environ['TCL_LIBRARY'] = os.path.join(_tcl_dir, _name)
+                    break
+            for _name in os.listdir(_tcl_dir):
+                if _name.startswith('tk8') and os.path.isdir(os.path.join(_tcl_dir, _name)):
+                    os.environ['TK_LIBRARY'] = os.path.join(_tcl_dir, _name)
+                    break
+    except Exception:
+        pass
+
 import time
 import json
 import ctypes
