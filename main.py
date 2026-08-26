@@ -208,34 +208,34 @@ def find_trae_window():
     return candidates[0][0], candidates[0][1]
 
 def maximize_window_force(hwnd):
-    """可靠地最大化窗口：先还原再最大化，反复验证直到真正生效。
-    返回 (width, height) 即最大化后的窗口尺寸。"""
-    # 先还原（如果最小化了）
+    """可靠地最大化窗口，返回 (width, height)。"""
+    # 先确保窗口可见（可能最小化到托盘）
+    user32.ShowWindow(hwnd, SW_SHOW)
+    time.sleep(0.2)
+    # 还原
     user32.ShowWindow(hwnd, SW_RESTORE)
     time.sleep(0.3)
-    # 再最大化
+    # 最大化
     user32.ShowWindow(hwnd, SW_MAXIMIZE)
-    time.sleep(0.3)
+    time.sleep(0.5)
+    # 置前
     user32.SetForegroundWindow(hwnd)
-    time.sleep(0.2)
+    time.sleep(0.3)
     
-    # 验证：如果窗口还是很小（< 500 宽），重试几次
+    # 验证并重试
     for attempt in range(5):
         rect = RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(rect))
         ww = rect.right - rect.left
         wh = rect.bottom - rect.top
-        if ww > 500:  # 正常窗口肯定大于 500 像素
+        if ww > 800:  # 最大化的窗口肯定很宽
             return ww, wh
-        # 再试一次
-        user32.ShowWindow(hwnd, SW_RESTORE)
-        time.sleep(0.2)
-        user32.ShowWindow(hwnd, SW_MAXIMIZE)
+        # 换个方式再试
+        user32.SendMessageW(hwnd, 0x0112, 0xF030, 0)  # WM_SYSCOMMAND + SC_MAXIMIZE
         time.sleep(0.5)
         user32.SetForegroundWindow(hwnd)
         time.sleep(0.2)
     
-    # 最后返回实际尺寸（让上层判断）
     rect = RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     return rect.right - rect.left, rect.bottom - rect.top
@@ -571,29 +571,17 @@ class App:
             if ww < 500:
                 raise Exception("TraeWork窗口无法最大化（当前仅 %dx%d），请确认屏幕已解锁" % (ww, wh))
             
-            # 自适应：窗口尺寸变化时，等比例缩放坐标（分辨率/缩放变化自动适配，无需重校）
+            # 自适应：窗口尺寸变化时，按宽度比例缩放坐标
             calib_w = int(self.config.get("calib_win_w", 0) or 0)
             calib_h = int(self.config.get("calib_win_h", 0) or 0)
             if calib_w > 0 and calib_h > 0:
                 if abs(ww - calib_w) > 30 or abs(wh - calib_h) > 30:
-                    ratio_w = ww / float(calib_w)
-                    ratio_h = wh / float(calib_h)
-                    # 宽高变化比例接近（等比例缩放，如分辨率/DPI变化）→ 自动换算坐标
-                    if abs(ratio_w - ratio_h) / max(ratio_w, ratio_h) < 0.03:
-                        ax = int(ax * ratio_w)
-                        ay = int(ay * ratio_h)
-                        cx = int(cx * ratio_w)
-                        cy = int(cy * ratio_h)
-                        self._log("窗口尺寸变化 (%dx%d -> %dx%d)，已按比例自动调整坐标" % (calib_w, calib_h, ww, wh))
-                    else:
-                        # 非等比例变化（如界面改版）→ 才需要重新校准
-                        msg = ("窗口尺寸与校准时不一致且非等比例变化（当前 %dx%d，校准 %dx%d），\n"
-                               "界面布局可能已改动，签到位置会不准，请重新校准！" % (ww, wh, calib_w, calib_h))
-                        self._log(msg)
-                        user32.SetCursorPos(orig_x, orig_y)
-                        if not silent:
-                            self.root.after(0, lambda: messagebox.showwarning("需要重新校准", msg))
-                        return
+                    ratio = ww / float(calib_w)
+                    ax = int(ax * ratio)
+                    ay = int(ay * ratio)
+                    cx = int(cx * ratio)
+                    cy = int(cy * ratio)
+                    self._log("窗口尺寸变化 (%dx%d -> %dx%d)，已按比例自动调整坐标" % (calib_w, calib_h, ww, wh))
             
             # 物理鼠标点击（需要管理员权限，因为 TraeWork 以管理员运行）
             # 先点一下窗口中间确保窗口获得焦点
